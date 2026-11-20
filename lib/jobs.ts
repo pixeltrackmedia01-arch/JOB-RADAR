@@ -15,8 +15,8 @@ export type JobFilters = {
   page?: number;
 };
 
-export const POSTED_OPTIONS: [string, string][] = [["1d", "Last 24 hours"], ["3d", "Last 3 days"], ["7d", "Last 7 days"], ["15d", "Last 15 days"], ["30d", "Last 30 days"]];
-const POSTED_DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "15d": 15, "30d": 30 };
+export const POSTED_OPTIONS: [string, string][] = [["1d", "Last 24 hours"], ["2d", "Last 2 days"], ["3d", "Last 3 days"], ["5d", "Last 5 days"]];
+const POSTED_DAYS: Record<string, number> = { "1d": 1, "2d": 2, "3d": 3, "5d": 5 };
 
 export type JobCard = {
   id: string; slug: string; title: string; company: string; location_text: string; short_description: string;
@@ -41,7 +41,7 @@ export async function searchJobs(f: JobFilters): Promise<{ jobs: JobCard[]; tota
 
 async function runSearch(f: JobFilters, mode: "all" | "any"): Promise<{ jobs: JobCard[]; total: number; page: number; pages: number }> {
   const tsq = (q: string) => (mode === "all" ? sql`jobradar.search_query(${q})` : sql`jobradar.search_query_any(${q})`);
-  const where: Sql[] = [sql`j.status = 'active'`];
+  const where: Sql[] = [sql`j.status = 'active'`, sql`coalesce(j.original_published_at, j.first_discovered_at) >= now() - interval '7 days'`];
   // Keywords match title, skills, tags, company and location — not loose words deep in descriptions.
   if (f.q?.trim()) where.push(sql`j.primary_vector @@ ${tsq(f.q.trim())}`);
   if (f.posted && POSTED_DAYS[f.posted]) where.push(sql`coalesce(j.original_published_at, j.first_discovered_at) >= now() - make_interval(days => ${POSTED_DAYS[f.posted]}::int)`);
@@ -88,7 +88,7 @@ export async function getJob(slug: string) {
 }
 
 export async function homeStats() {
-  return one(sql`select (select count(*)::int from jobradar.jobs where status = 'active') as total,
+  return one(sql`select (select count(*)::int from jobradar.jobs where status = 'active' and coalesce(original_published_at, first_discovered_at) >= now() - interval '7 days') as total,
       (select count(*)::int from jobradar.jobs where first_discovered_at > now() - interval '24 hours') as today,
       (select max(completed_at) from jobradar.collection_runs where status = 'succeeded') as last_run,
       (select min(cs.next_run_at) from jobradar.collection_schedules cs join jobradar.sources s on s.id = cs.source_id where cs.is_enabled and s.is_enabled and s.permission_status = 'permitted') as next_run`);
@@ -96,7 +96,7 @@ export async function homeStats() {
 
 export async function categoryCounts() {
   return query(sql`select c.slug, c.name, count(j.id)::int as n from jobradar.categories c
-      left join jobradar.jobs j on j.category_id = c.id and j.status = 'active' group by c.id order by c.sort_order`);
+      left join jobradar.jobs j on j.category_id = c.id and j.status = 'active' and coalesce(j.original_published_at, j.first_discovered_at) >= now() - interval '7 days' group by c.id order by c.sort_order`);
 }
 
 export async function locationBySlug(slug: string) {

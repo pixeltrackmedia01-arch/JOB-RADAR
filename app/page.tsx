@@ -23,12 +23,12 @@ export default async function Home() {
               <CityOptions locations={opts.locations} />
             </select>
             <select name="posted" aria-label="Date posted" defaultValue="">
-              <option value="">Any time</option><option value="1d">Last 24 hours</option><option value="3d">Last 3 days</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option>
+              <option value="">Last 7 days</option><option value="1d">Last 24 hours</option><option value="2d">Last 2 days</option><option value="3d">Last 3 days</option><option value="5d">Last 5 days</option>
             </select>
             <button className="btn">Search jobs</button>
           </form>
           <div className="row small muted">
-            <span>{(stats?.total ?? 0).toLocaleString("en-IN")} active jobs in India</span>·<span>{stats?.today ?? 0} discovered in the last 24 h</span>·
+            <span>{(stats?.total ?? 0).toLocaleString("en-IN")} jobs in India posted in the last 7 days</span>·<span>{stats?.today ?? 0} discovered in the last 24 h</span>·
             <span>Last scan {timeAgo(stats?.last_run)}</span>{stats?.next_run && <>·<span>Next scan {fmtTimeIST(stats.next_run)} IST</span></>}
           </div>
           <div className="card" style={{ marginTop: 24 }}>

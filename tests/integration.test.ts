@@ -30,6 +30,8 @@ before(async () => {
   email.setEmailSender(async (m) => { sent.push(m); return { ok: true, provider: "test", messageId: `m${sent.length}` }; });
   const fixture = JSON.parse(readFileSync("tests/fixtures/remoteok.json", "utf8"));
   const leverFixture = JSON.parse(readFileSync("tests/fixtures/lever-meesho.json", "utf8"));
+  // Fresh posting dates, except the last listing which is 10 days old and must be skipped.
+  leverFixture.forEach((j: any, i: number) => { j.createdAt = Date.now() - (i === leverFixture.length - 1 ? 10 * 86400_000 : i * 3600_000); });
   const sources = await import("../lib/sources/index.ts");
   const ok = (await import("../lib/sources/remoteok.ts")).remoteok;
   const lv = (await import("../lib/sources/ats.ts")).lever;
@@ -108,6 +110,8 @@ test("full alert workflow", async () => {
   assert.ok(s.total > 0);
   assert.ok(s.jobs.every((j: any) => /manag/i.test(j.title + " " + j.company)), "keyword matches titles");
   assert.ok(s.jobs[0].source_url && s.jobs[0].posted_at, "source + posted date returned");
+  const [old] = await q(sql.sql`select count(*)::int as n from jobradar.jobs where original_published_at < now() - interval '7 days'`);
+  assert.equal(old.n, 0, "jobs posted more than 7 days ago are not collected");
   const recent = await jobs.searchJobs({ posted: "1d" });
   assert.ok(recent.jobs.every((j: any) => Date.now() - new Date(j.posted_at).getTime() <= 86400_000 + 60_000));
   const all = await jobs.searchJobs({});

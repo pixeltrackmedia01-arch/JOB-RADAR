@@ -18,7 +18,7 @@ export default async function JobList({ filters, basePath, fixed = {} }: { filte
           <div><label>Keywords</label><input name="q" defaultValue={filters.q} placeholder="Title, skill, company" /></div>
           {!fixed.category && <div><label>Category</label><select name="category" defaultValue={filters.category ?? ""}><option value="">All categories</option>{categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}</select></div>}
           {!fixed.city && <div><label>Location</label><select name="city" defaultValue={filters.city ?? ""}><option value="">All India</option><CityOptions locations={locations} /></select></div>}
-          <div><label>Date posted</label><select name="posted" defaultValue={filters.posted ?? ""}><option value="">Any time</option>{POSTED_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          <div><label>Date posted</label><select name="posted" defaultValue={filters.posted ?? ""}><option value="">Last 7 days</option>{POSTED_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
           <div><label>Work mode</label><select name="mode" defaultValue={filters.mode ?? ""}><option value="">Any</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option><option value="onsite">On-site</option></select></div>
           <div><label>Employment type</label><select name="type" defaultValue={filters.type ?? ""}><option value="">Any</option><option value="full_time">Full-time</option><option value="part_time">Part-time</option><option value="contract">Contract</option><option value="internship">Internship</option><option value="freelance">Freelance</option></select></div>
           <div><label>My experience (years)</label><input name="exp" inputMode="numeric" defaultValue={filters.exp} /></div>
@@ -29,7 +29,7 @@ export default async function JobList({ filters, basePath, fixed = {} }: { filte
       <section className="grid" style={{ alignContent: "start" }}>
         <AlertCta href={alertHref({ ...alertSp, ...fixed })} title={hasFilters || Object.keys(fixed).length ? "Get alerts for this search" : "Get notified about new jobs"} />
         <div className="row small">
-          <span className="muted">{res.total.toLocaleString("en-IN")} job{res.total === 1 ? "" : "s"} in India{filters.q ? ` for “${filters.q}”` : ""} · most recently posted first</span>
+          <span className="muted">{res.total.toLocaleString("en-IN")} job{res.total === 1 ? "" : "s"} in India posted in the last {filters.posted ? filters.posted.replace("d", "") === "1" ? "24 hours" : `${filters.posted.replace("d", "")} days` : "7 days"}{filters.q ? ` for “${filters.q}”` : ""} · newest first</span>
           {POSTED_OPTIONS.map(([v, l]) => {
             const q = new URLSearchParams(); for (const [k, val] of Object.entries(sp)) if (val && k !== "posted" && !fixed[k]) q.set(k, val);
             if (filters.posted !== v) q.set("posted", v);

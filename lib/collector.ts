@@ -19,6 +19,18 @@ import { createFetchContext, SourceError } from "./sources/types.ts";
 import { dispatchNotifications, retryFailedNotifications } from "./notify/dispatch.ts";
 
 const LOCK_MINUTES = 10;
+/** JobRadar only keeps jobs posted within this many days. */
+export const MAX_JOB_AGE_DAYS = 7;
+
+/** Expires jobs whose posting date is older than MAX_JOB_AGE_DAYS so they leave search and alerts. */
+export async function expireOldJobs(): Promise<number> {
+  const rows = await query(sql`update jobradar.jobs set status = 'expired'
+     where status = 'active'
+       and coalesce(original_published_at, first_discovered_at) < now() - make_interval(days => ${MAX_JOB_AGE_DAYS}::int)
+     returning id`);
+  if (rows.length) await logActivity({ scope: "system", type: "jobs_expired", message: `${rows.length} job(s) expired: posted more than ${MAX_JOB_AGE_DAYS} days ago` });
+  return rows.length;
+}
 const INGEST_CHUNK = 25;
 
 export type Claim = {
@@ -143,20 +155,23 @@ export async function runSource(
     const normalized: NormalizedJob[] = [];
     let invalid = 0;
     let nonIndia = 0;
+    let tooOld = 0;
     let batchDuplicates = 0;
     for (const r of rawJobs) {
       const n = normalizeJob(r, tax);
       if (!n) { invalid++; continue; }
       // JobRadar is India-only: listings that are not located in (or remote within) India are skipped.
       if (!isIndiaJob(n)) { nonIndia++; continue; }
+      // Only jobs posted within the last MAX_JOB_AGE_DAYS (undated listings count as posted when first seen).
+      if (n.published_at && Date.parse(n.published_at) < Date.now() - MAX_JOB_AGE_DAYS * 86400_000) { tooOld++; continue; }
       if (seen.has(n.fingerprint) || seen.has(`ext:${n.external_id}`)) { batchDuplicates++; continue; }
       seen.add(n.fingerprint);
       seen.add(`ext:${n.external_id}`);
       normalized.push(n);
     }
     await logActivity({ runId, sourceId: src.id, type: "jobs_discovered",
-      message: `${rawJobs.length} listings discovered (${requests} request${requests === 1 ? "" : "s"}); ${normalized.length} in India kept, ${nonIndia} outside India skipped`,
-      data: { discovered: rawJobs.length, india: normalized.length, non_india_skipped: nonIndia, invalid, batch_duplicates: batchDuplicates } });
+      message: `${rawJobs.length} listings discovered (${requests} request${requests === 1 ? "" : "s"}); ${normalized.length} kept (India, posted in last ${MAX_JOB_AGE_DAYS} days), ${nonIndia} outside India and ${tooOld} older than ${MAX_JOB_AGE_DAYS} days skipped`,
+      data: { discovered: rawJobs.length, kept: normalized.length, non_india_skipped: nonIndia, too_old_skipped: tooOld, invalid, batch_duplicates: batchDuplicates } });
 
     // Ingest (dedupe against the consolidated DB, insert/update, index).
     const outcomes: { job_id: string; outcome: string }[] = [];
@@ -196,7 +211,7 @@ export async function runSource(
         requests_made = ${requests}, jobs_discovered = ${rawJobs.length}, jobs_inserted = ${inserted.length},
         jobs_updated = ${count("updated")}, duplicates_detected = ${duplicates},
         subscriptions_matched = ${subs.size}, notifications_queued = ${matched.length + updateMatched.length},
-        execution_metadata = execution_metadata || ${{ duration_ms: elapsed, unchanged: count("unchanged"), invalid, non_india_skipped: nonIndia }}::jsonb
+        execution_metadata = execution_metadata || ${{ duration_ms: elapsed, unchanged: count("unchanged"), invalid, non_india_skipped: nonIndia, too_old_skipped: tooOld }}::jsonb
       where id = ${runId}::uuid returning id`);
     await query(sql`update jobradar.collection_tasks set status = 'succeeded', completed_at = now(), error_message = null,
         next_attempt_at = null where id = ${taskId}::uuid returning id`);
@@ -283,6 +298,7 @@ export async function tick(deps: CollectorDeps = {}): Promise<TickResult> {
   const now = deps.now?.() ?? new Date();
   const automation = await getSetting("automation");
   await reapStaleRuns(now);
+  await expireOldJobs();
   let claims: Claim[] = [];
   let results: SourceRunResult[] = [];
   let retried: SourceRunResult[] = [];
