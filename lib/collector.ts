@@ -13,7 +13,7 @@ import { json, sql } from "./sql.ts";
 import { logActivity } from "./activity.ts";
 import { getSetting } from "./settings.ts";
 import { loadTaxonomy } from "./taxonomy.ts";
-import { normalizeJob, type NormalizedJob } from "./normalize.ts";
+import { isIndiaJob, normalizeJob, type NormalizedJob } from "./normalize.ts";
 import { getConnector } from "./sources/index.ts";
 import { createFetchContext, SourceError } from "./sources/types.ts";
 import { dispatchNotifications, retryFailedNotifications } from "./notify/dispatch.ts";
@@ -134,7 +134,7 @@ export async function runSource(
   try {
     const connector = getConnector(src.slug);
     if (!connector) throw new SourceError("config", `No connector is implemented for source "${src.slug}"`);
-    const ctx = createFetchContext(src as any, { fetchImpl: deps.fetchImpl });
+    const ctx = createFetchContext(src as any, { fetchImpl: deps.fetchImpl, log: (m) => console.warn(`[${src.slug}] ${m}`) });
     const rawJobs = await connector.collect(ctx).finally(() => { requests = ctx.requestsMade(); });
     const tax = await loadTaxonomy();
 
@@ -142,18 +142,21 @@ export async function runSource(
     const seen = new Set<string>();
     const normalized: NormalizedJob[] = [];
     let invalid = 0;
+    let nonIndia = 0;
     let batchDuplicates = 0;
     for (const r of rawJobs) {
       const n = normalizeJob(r, tax);
       if (!n) { invalid++; continue; }
+      // JobRadar is India-only: listings that are not located in (or remote within) India are skipped.
+      if (!isIndiaJob(n)) { nonIndia++; continue; }
       if (seen.has(n.fingerprint) || seen.has(`ext:${n.external_id}`)) { batchDuplicates++; continue; }
       seen.add(n.fingerprint);
       seen.add(`ext:${n.external_id}`);
       normalized.push(n);
     }
     await logActivity({ runId, sourceId: src.id, type: "jobs_discovered",
-      message: `${rawJobs.length} listings discovered (${requests} request${requests === 1 ? "" : "s"})`,
-      data: { discovered: rawJobs.length, invalid, batch_duplicates: batchDuplicates } });
+      message: `${rawJobs.length} listings discovered (${requests} request${requests === 1 ? "" : "s"}); ${normalized.length} in India kept, ${nonIndia} outside India skipped`,
+      data: { discovered: rawJobs.length, india: normalized.length, non_india_skipped: nonIndia, invalid, batch_duplicates: batchDuplicates } });
 
     // Ingest (dedupe against the consolidated DB, insert/update, index).
     const outcomes: { job_id: string; outcome: string }[] = [];
@@ -193,7 +196,7 @@ export async function runSource(
         requests_made = ${requests}, jobs_discovered = ${rawJobs.length}, jobs_inserted = ${inserted.length},
         jobs_updated = ${count("updated")}, duplicates_detected = ${duplicates},
         subscriptions_matched = ${subs.size}, notifications_queued = ${matched.length + updateMatched.length},
-        execution_metadata = execution_metadata || ${{ duration_ms: elapsed, unchanged: count("unchanged"), invalid }}::jsonb
+        execution_metadata = execution_metadata || ${{ duration_ms: elapsed, unchanged: count("unchanged"), invalid, non_india_skipped: nonIndia }}::jsonb
       where id = ${runId}::uuid returning id`);
     await query(sql`update jobradar.collection_tasks set status = 'succeeded', completed_at = now(), error_message = null,
         next_attempt_at = null where id = ${taskId}::uuid returning id`);

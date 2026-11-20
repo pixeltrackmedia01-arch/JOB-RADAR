@@ -302,8 +302,28 @@ export function detectLocation(
       }
     }
   }
+  if (!city && workMode === "remote" && INDIA_RE.test(t)) city = "remote";
+  if (!city && INDIA_RE.test(t)) city = "india";
   if (!city && workMode === "remote") city = "remote";
   return { location: city, district };
+}
+
+// ------------------------------------------------------------ India only
+
+const INDIA_RE = /\b(india|indian|bharat|pan[- ]india|maharashtra|karnataka|gujarat|telangana|tamil nadu|kerala|haryana|uttar pradesh|west bengal|rajasthan|madhya pradesh|andhra pradesh|odisha|punjab|goa)\b/i;
+const NON_INDIA_HINT = /\b(usa|united states|u\.s\.|canada|uk|united kingdom|germany|europe|emea|latam|australia|singapore|uae|dubai|pakistan|bangladesh|sri lanka|philippines)\b/i;
+
+/**
+ * True when the listing is located in India: an Indian city/district was
+ * recognised, or the location text names India / an Indian state (including
+ * "Remote - India"). Generic "Remote" or "Worldwide" listings are excluded.
+ */
+export function isIndiaJob(n: Pick<NormalizedJob, "location_slug" | "district_slug" | "location_text">): boolean {
+  const t = n.location_text || "";
+  if (INDIA_RE.test(t)) return true;
+  if (n.district_slug) return true;
+  if (n.location_slug && n.location_slug !== "remote") return !NON_INDIA_HINT.test(t) || /india/i.test(t);
+  return false;
 }
 
 // ------------------------------------------------------------ identity

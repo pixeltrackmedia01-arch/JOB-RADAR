@@ -38,3 +38,4 @@ footer.foot{border-top:1px solid var(--line);margin-top:50px;padding:24px 0;colo
 .checks{display:flex;flex-wrap:wrap;gap:6px}.checks label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;margin:0;font-weight:500;color:var(--ink);cursor:pointer;background:var(--card)}
 .checks input{width:auto;margin:0}.desc{white-space:pre-wrap;line-height:1.65}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.chip.source{color:var(--ink);border-color:var(--brand);background:var(--brand-soft)}

@@ -3,8 +3,9 @@ import { arbeitnow } from "./arbeitnow.ts";
 import { remoteok } from "./remoteok.ts";
 import { remotive } from "./remotive.ts";
 import { adzunaIndia } from "./adzuna.ts";
+import { ashby, greenhouse, lever } from "./ats.ts";
 
-const registry = new Map<string, Connector>([arbeitnow, remoteok, remotive, adzunaIndia].map((c) => [c.slug, c]));
+const registry = new Map<string, Connector>([arbeitnow, remoteok, remotive, adzunaIndia, greenhouse, lever, ashby].map((c) => [c.slug, c]));
 
 /** Tests can register fake connectors. */
 export function registerConnector(c: Connector): void {

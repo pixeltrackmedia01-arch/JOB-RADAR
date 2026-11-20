@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-type Opt = { id: string; name: string; kind?: string; slug?: string };
+type Opt = { id: string; name: string; kind?: string; slug?: string; tier?: number | null };
 export type AlertPrefill = {
   keywords?: string[]; category_ids?: string[]; location_ids?: string[]; include_remote?: boolean; work_modes?: string[];
   employment_types?: string[]; salary_min?: number | null; salary_max?: number | null; experience_min?: number | null; experience_max?: number | null;
@@ -55,7 +55,8 @@ export default function AlertForm(props: {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string; link?: string } | null>(null);
 
   const toggle = (arr: string[], set: (v: string[]) => void, v: string) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const cities = props.locations.filter((l) => l.kind === "city");
+  const cities = props.locations.filter((l) => l.kind === "city" && l.tier === 1);
+  const tier2 = props.locations.filter((l) => l.kind === "city" && l.tier !== 1);
   const districts = props.locations.filter((l) => l.kind === "district");
 
   async function submit(e: React.FormEvent) {
@@ -119,11 +120,17 @@ export default function AlertForm(props: {
           <input id="ak2" value={keywords} onChange={(e) => setKeywords(e.target.value)} /></div>
       )}
       <div>
-        <label>Cities</label>
+        <label>Cities (leave empty for all of India)</label>
         <div className="checks">
-          <label><input type="checkbox" checked={remote} onChange={() => setRemote(!remote)} /> Remote</label>
+          <label><input type="checkbox" checked={remote} onChange={() => setRemote(!remote)} /> Remote (India)</label>
           {cities.map((c) => <label key={c.id}><input type="checkbox" checked={locs.includes(c.id)} onChange={() => toggle(locs, setLocs, c.id)} /> {c.name}</label>)}
         </div>
+        <details style={{ marginTop: 8 }} open={tier2.some((c) => locs.includes(c.id))}>
+          <summary className="small" style={{ cursor: "pointer", color: "var(--brand)", fontWeight: 600 }}>Tier 2 & other cities ({tier2.length}){tier2.filter((c) => locs.includes(c.id)).length ? ` · ${tier2.filter((c) => locs.includes(c.id)).length} selected` : ""}</summary>
+          <div className="checks" style={{ marginTop: 8, maxHeight: 220, overflowY: "auto" }}>
+            {tier2.map((c) => <label key={c.id}><input type="checkbox" checked={locs.includes(c.id)} onChange={() => toggle(locs, setLocs, c.id)} /> {c.name}</label>)}
+          </div>
+        </details>
       </div>
       {!more && <button type="button" className="btn ghost small" style={{ justifySelf: "start" }} onClick={() => setMore(true)}>More filters (category, salary, experience…)</button>}
       {more && (

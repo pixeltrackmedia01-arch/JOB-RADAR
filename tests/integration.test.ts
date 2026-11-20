@@ -23,15 +23,19 @@ before(async () => {
   await admin.end();
   const c = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
-  for (const f of ["001_schema.sql", "002_functions.sql", "003_seed.sql"]) await c.query(readFileSync(`db/migrations/${f}`, "utf8"));
+  for (const f of ["001_schema.sql", "002_functions.sql", "003_seed.sql", "005_india_only.sql", "006_india_cities.sql"]) await c.query(readFileSync(`db/migrations/${f}`, "utf8"));
   await c.query("insert into jobradar.app_secrets (id, secret_hash) values (1, $1)", [createHash("sha256").update(process.env.DB_GATEWAY_SECRET!).digest()]);
   await c.end();
   const email = await import("../lib/notify/email.ts");
   email.setEmailSender(async (m) => { sent.push(m); return { ok: true, provider: "test", messageId: `m${sent.length}` }; });
   const fixture = JSON.parse(readFileSync("tests/fixtures/remoteok.json", "utf8"));
+  const leverFixture = JSON.parse(readFileSync("tests/fixtures/lever-meesho.json", "utf8"));
   const sources = await import("../lib/sources/index.ts");
   const ok = (await import("../lib/sources/remoteok.ts")).remoteok;
+  const lv = (await import("../lib/sources/ats.ts")).lever;
   sources.registerConnector({ slug: "remoteok", collect: (ctx) => ok.collect({ ...ctx, getJson: async () => fixture }) });
+  // Lever: only the Meesho board returns data in the test, the others return nothing.
+  sources.registerConnector({ slug: "lever-india", collect: (ctx) => lv.collect({ ...ctx, getJson: async (u: string) => (u.includes("/meesho") ? leverFixture : []) }) });
   mod = {
     alerts: await import("../lib/alerts.ts"),
     collector: await import("../lib/collector.ts"),
@@ -52,7 +56,7 @@ test("gateway rejects a wrong secret", async () => {
 test("full alert workflow", async () => {
   const { alerts, collector, db, sql } = mod;
   const q = (s: any) => db.query(s);
-  const r = await alerts.subscribe({ email: "Seeker@Example.com", prefs: { keywords: ["software engineer"], include_remote: true, notification_channels: ["email"] } }, "iphash");
+  const r = await alerts.subscribe({ email: "Seeker@Example.com", prefs: { keywords: ["manager"], notification_channels: ["email"] } }, "iphash");
   assert.equal(r.status, "verification_required");
   assert.equal(sent.length, 1);
   assert.match(sent[0].subject, /Confirm/);
@@ -67,10 +71,13 @@ test("full alert workflow", async () => {
   assert.ok(v.ok);
   assert.equal((await alerts.verifyEmail(token)).ok, false, "token is single-use");
 
-  // only remoteok enabled for the test
-  await q(sql.sql`update jobradar.sources set is_enabled = (slug = 'remoteok') returning id`);
+  // Remote OK fixture is US-only and Lever (Meesho) is India: India-only filter keeps only the latter.
+  await q(sql.sql`update jobradar.sources set is_enabled = slug in ('remoteok', 'lever-india') returning id`);
   const t1 = await collector.tick();
-  const res = t1.results.find((x: any) => x.source === "remoteok");
+  const rok = t1.results.find((x: any) => x.source === "remoteok");
+  assert.equal(rok.status, "succeeded", rok.error);
+  assert.equal(rok.inserted, 0, "non-India listings are skipped");
+  const res = t1.results.find((x: any) => x.source === "lever-india");
   assert.equal(res.status, "succeeded", res.error);
   assert.ok(res.inserted > 0);
   const alertMails = sent.filter((m) => !/Confirm/.test(m.subject));
@@ -85,7 +92,7 @@ test("full alert workflow", async () => {
   // force a re-import (new run) — same jobs must not notify again
   await q(sql.sql`update jobradar.collection_schedules set last_run_at = now() - interval '2 hours' returning id`);
   const t3 = await collector.runNow(null);
-  const r3 = t3.results.find((x: any) => x.source === "remoteok");
+  const r3 = t3.results.find((x: any) => x.source === "lever-india");
   assert.equal(r3.status, "succeeded", r3.error);
   assert.equal(r3.inserted, 0);
   assert.equal(sent.filter((m) => !/Confirm/.test(m.subject)).length, 1, "no duplicate notifications on re-import");
@@ -97,8 +104,14 @@ test("full alert workflow", async () => {
 
   // search finds new jobs immediately
   const jobs = await import("../lib/jobs.ts");
-  const s = await jobs.searchJobs({ q: "engineer" });
+  const s = await jobs.searchJobs({ q: "manager" });
   assert.ok(s.total > 0);
+  assert.ok(s.jobs.every((j: any) => /manag/i.test(j.title + " " + j.company)), "keyword matches titles");
+  assert.ok(s.jobs[0].source_url && s.jobs[0].posted_at, "source + posted date returned");
+  const recent = await jobs.searchJobs({ posted: "1d" });
+  assert.ok(recent.jobs.every((j: any) => Date.now() - new Date(j.posted_at).getTime() <= 86400_000 + 60_000));
+  const all = await jobs.searchJobs({});
+  assert.ok(all.total >= recent.total);
 
   // management + unsubscribe
   const m = await alerts.getManagedAlert(v.manageToken);
@@ -122,11 +135,11 @@ test("failed source is recorded, retried, and does not block others", async () =
   const sources = await import("../lib/sources/index.ts");
   const { SourceError } = await import("../lib/sources/types.ts");
   sources.registerConnector({ slug: "arbeitnow", collect: async () => { throw new SourceError("http", "HTTP 503 from source", { status: 503 }); } });
-  await db.query(sql.sql`update jobradar.sources set is_enabled = slug in ('remoteok','arbeitnow') returning id`);
+  await db.query(sql.sql`update jobradar.sources set is_enabled = slug in ('lever-india','arbeitnow'), permission_status = 'permitted' returning id`);
   await db.query(sql.sql`update jobradar.collection_schedules set last_run_at = now() - interval '2 hours' returning id`);
   const t = await collector.runNow(null);
   assert.equal(t.results.find((x: any) => x.source === "arbeitnow").status, "failed");
-  assert.equal(t.results.find((x: any) => x.source === "remoteok").status, "succeeded");
+  assert.equal(t.results.find((x: any) => x.source === "lever-india").status, "succeeded");
   const [task] = await db.query(sql.sql`select t.status, t.next_attempt_at from jobradar.collection_tasks t join jobradar.sources s on s.id = t.source_id where s.slug = 'arbeitnow'`);
   assert.equal(task.status, "failed");
   assert.ok(task.next_attempt_at);

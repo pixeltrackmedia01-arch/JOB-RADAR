@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { JobCard as J } from "@/lib/jobs";
-import { timeAgo } from "@/lib/time";
+import { fmtIST, timeAgo } from "@/lib/time";
 import { experienceLabel } from "@/lib/notify/templates";
 
 const TYPE: Record<string, string> = { full_time: "Full-time", part_time: "Part-time", contract: "Contract", internship: "Internship", temporary: "Temporary", freelance: "Freelance" };
@@ -20,9 +20,20 @@ export default function JobCard({ job }: { job: J }) {
         {job.employment_type && <span>{TYPE[job.employment_type]}</span>}
       </div>
       {job.short_description && <p className="small muted" style={{ margin: "8px 0 0" }}>{job.short_description.slice(0, 200)}</p>}
-      <div className="meta"><span>Found {timeAgo(job.first_discovered_at)}</span>{job.category_name && <span className="chip">{job.category_name}</span>}{job.source_names?.length > 0 && <span>via {job.source_names.join(", ")}</span>}</div>
+      <div className="meta">
+        <span title={fmtIST(job.posted_at)}>🕒 Posted {timeAgo(job.posted_at)}{!job.original_published_at && " (first seen)"}</span>
+        <span className="chip source">Source: {sourceLabel(job)}</span>
+        {job.category_name && <span className="chip">{job.category_name}</span>}
+      </div>
     </Link>
   );
+}
+
+export function sourceLabel(job: { source_names?: string[]; source_url?: string | null }): string {
+  let host = "";
+  try { host = job.source_url ? new URL(job.source_url).hostname.replace(/^www\./, "") : ""; } catch {}
+  const names = job.source_names?.join(", ") || "";
+  return host ? `${names} · ${host}` : names || "—";
 }
 
 export function AlertCta({ href, title = "Get notified about new jobs", text = "We check sources every 30 minutes and alert you when a matching job appears. No account needed." }: { href: string; title?: string; text?: string }) {

@@ -11,26 +11,40 @@ export type JobFilters = {
   exp?: string; // max years of experience the seeker has
   salary?: string; // minimum annual INR
   source?: string;
+  posted?: string; // 1d | 3d | 7d | 15d | 30d
   page?: number;
 };
+
+export const POSTED_OPTIONS: [string, string][] = [["1d", "Last 24 hours"], ["3d", "Last 3 days"], ["7d", "Last 7 days"], ["15d", "Last 15 days"], ["30d", "Last 30 days"]];
+const POSTED_DAYS: Record<string, number> = { "1d": 1, "3d": 3, "7d": 7, "15d": 15, "30d": 30 };
 
 export type JobCard = {
   id: string; slug: string; title: string; company: string; location_text: string; short_description: string;
   salary_text: string | null; experience_min: number | null; experience_max: number | null; employment_type: string | null;
   work_mode: string | null; first_discovered_at: string; original_published_at: string | null;
   category_name: string | null; category_slug: string | null; city_name: string | null; source_names: string[];
+  source_url: string | null; posted_at: string;
 };
 
 const PAGE = 20;
 
 export function filtersFromSearchParams(sp: Record<string, string | string[] | undefined>): JobFilters {
   const g = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string).slice(0, 120) : undefined);
-  return { q: g("q"), category: g("category"), city: g("city"), mode: g("mode"), type: g("type"), exp: g("exp"), salary: g("salary"), source: g("source"), page: Math.max(1, Math.min(50, Number(g("page")) || 1)) };
+  return { q: g("q"), category: g("category"), city: g("city"), mode: g("mode"), type: g("type"), exp: g("exp"), salary: g("salary"), source: g("source"), posted: g("posted") && POSTED_DAYS[g("posted")!] ? g("posted") : undefined, page: Math.max(1, Math.min(50, Number(g("page")) || 1)) };
 }
 
-export async function searchJobs(f: JobFilters): Promise<{ jobs: JobCard[]; total: number; page: number; pages: number }> {
+export async function searchJobs(f: JobFilters): Promise<{ jobs: JobCard[]; total: number; page: number; pages: number; broadened: boolean }> {
+  const strict = await runSearch(f, "all");
+  if (strict.total > 0 || !f.q?.trim() || !/\s/.test(f.q.trim())) return { ...strict, broadened: false };
+  return { ...(await runSearch(f, "any")), broadened: true };
+}
+
+async function runSearch(f: JobFilters, mode: "all" | "any"): Promise<{ jobs: JobCard[]; total: number; page: number; pages: number }> {
+  const tsq = (q: string) => (mode === "all" ? sql`jobradar.search_query(${q})` : sql`jobradar.search_query_any(${q})`);
   const where: Sql[] = [sql`j.status = 'active'`];
-  if (f.q?.trim()) where.push(sql`j.search_vector @@ jobradar.search_query(${f.q.trim()})`);
+  // Keywords match title, skills, tags, company and location — not loose words deep in descriptions.
+  if (f.q?.trim()) where.push(sql`j.primary_vector @@ ${tsq(f.q.trim())}`);
+  if (f.posted && POSTED_DAYS[f.posted]) where.push(sql`coalesce(j.original_published_at, j.first_discovered_at) >= now() - make_interval(days => ${POSTED_DAYS[f.posted]}::int)`);
   if (f.category) where.push(sql`c.slug = ${f.category}`);
   if (f.city) {
     if (f.city === "remote") where.push(sql`j.work_mode = 'remote'`);
@@ -45,11 +59,16 @@ export async function searchJobs(f: JobFilters): Promise<{ jobs: JobCard[]; tota
   const from = sql`from jobradar.jobs j left join jobradar.categories c on c.id = j.category_id
     left join jobradar.locations l on l.id = j.location_id left join jobradar.locations d on d.id = j.district_id where ${w}`;
   const page = f.page ?? 1;
-  const order = f.q?.trim() ? sql`ts_rank(j.search_vector, jobradar.search_query(${f.q.trim()})) desc, j.first_discovered_at desc` : sql`j.first_discovered_at desc`;
+  const posted = sql`coalesce(j.original_published_at, j.first_discovered_at)`;
+  const order = f.q?.trim()
+    ? sql`ts_rank(j.primary_vector, ${tsq(f.q.trim())}) desc, ${posted} desc`
+    : sql`${posted} desc`;
   const [rows, count] = await Promise.all([
     query<JobCard>(sql`select j.id, j.slug, j.title, j.company, j.location_text, j.short_description, j.salary_text, j.experience_min, j.experience_max,
         j.employment_type, j.work_mode, j.first_discovered_at, j.original_published_at, c.name as category_name, c.slug as category_slug, l.name as city_name,
-        coalesce((select array_agg(distinct s.name) from jobradar.job_sources js join jobradar.sources s on s.id = js.source_id where js.job_id = j.id), '{}') as source_names
+        coalesce((select array_agg(distinct s.name) from jobradar.job_sources js join jobradar.sources s on s.id = js.source_id where js.job_id = j.id), '{}') as source_names,
+        (select js.source_url from jobradar.job_sources js where js.job_id = j.id order by js.first_seen_at limit 1) as source_url,
+        coalesce(j.original_published_at, j.first_discovered_at) as posted_at
       ${from} order by ${order} limit ${PAGE} offset ${(page - 1) * PAGE}`),
     one(sql`select count(*)::int as n ${from}`),
   ]);

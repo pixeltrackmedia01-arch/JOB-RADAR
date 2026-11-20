@@ -23,3 +23,10 @@ test("sql literal escaping", () => {
   assert.equal(literal(["a\"b", "c'd"]), `'{"a\\"b","c''d"}'`);
   assert.throws(() => literal("a\u0000"));
 });
+test("india-only filter", async () => {
+  const { isIndiaJob } = await import("../lib/normalize.ts");
+  assert.ok(isIndiaJob({ location_slug: "bengaluru", district_slug: null, location_text: "Bangalore" }));
+  assert.ok(isIndiaJob({ location_slug: "remote", district_slug: null, location_text: "Remote - India" }));
+  assert.ok(!isIndiaJob({ location_slug: "remote", district_slug: null, location_text: "Remote (Worldwide)" }));
+  assert.ok(!isIndiaJob({ location_slug: null, district_slug: null, location_text: "Berlin, Germany" }));
+});

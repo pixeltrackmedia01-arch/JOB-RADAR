@@ -28,6 +28,10 @@ export default async function JobPage({ params }: { params: Promise<{ slug: stri
             {job.work_mode && <span className="chip">{job.work_mode}</span>}{job.employment_type && <span className="chip">{job.employment_type.replace("_", "-")}</span>}
           </div>
           {job.skills?.length > 0 && <div className="row" style={{ marginTop: 12 }}>{job.skills.map((s: string) => <span key={s} className="chip">{s}</span>)}</div>}
+          <div className="meta" style={{ fontSize: 14 }}>
+            <span>🕒 Posted {job.original_published_at ? fmtIST(job.original_published_at) : `— (first seen ${fmtIST(job.first_discovered_at)})`}</span>
+            {primary && <span className="chip source">Source: {primary.name} · <a href={primary.source_url} target="_blank" rel="noopener">{new URL(primary.source_url).hostname.replace(/^www\./, "")}</a></span>}
+          </div>
           {primary && <div className="row" style={{ margin: "18px 0" }}><a className="btn" href={job.apply_url || primary.source_url} target="_blank" rel="noopener">Apply on {primary.name} ↗</a></div>}
           <div className="desc">{job.description || job.short_description}</div>
         </article>
