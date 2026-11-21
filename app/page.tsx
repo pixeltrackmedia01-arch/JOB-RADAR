@@ -3,13 +3,17 @@ import AlertForm from "@/components/AlertForm";
 import JobCard from "@/components/JobCard";
 import CityOptions from "@/components/CityOptions";
 import { formOptions } from "@/components/data";
-import { categoryCounts, homeStats, searchJobs } from "@/lib/jobs";
+import Recommendations from "@/components/Recommendations";
+import { homeStats, searchJobs } from "@/lib/jobs";
+import { lpa, overview } from "@/lib/insights";
 import { fmtTimeIST, timeAgo } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [opts, stats, latest, cats] = await Promise.all([formOptions(), homeStats(), searchJobs({ page: 1 }), categoryCounts()]);
+  const [opts, stats, latest, ins] = await Promise.all([formOptions(), homeStats(), searchJobs({ page: 1 }), overview()]);
+  const cats = ins.categories;
+  const m = ins.modes;
   return (
     <>
       <section className="hero">
@@ -47,7 +51,27 @@ export default async function Home() {
         </section>
         <section className="section">
           <h2>Browse by category</h2>
-          <div className="row">{cats.filter((c) => c.slug !== "other").map((c) => <Link key={c.slug} className="chip" href={`/category/${c.slug}`}>{c.name} · {c.n}</Link>)}</div>
+          <div className="row">{cats.map((c) => <Link key={c.slug} className="chip" href={`/category/${c.slug}`}>{c.name} · {c.n}</Link>)}</div>
+        </section>
+        <Recommendations popular={latest.jobs} trending={cats} compact />
+        <section className="section">
+          <div className="row" style={{ justifyContent: "space-between" }}><h2>Explore the Job Market</h2><Link href="/job-market-insights">All insights →</Link></div>
+          <p className="small muted" style={{ marginTop: -6 }}>From the {ins.recent.week.toLocaleString("en-IN")} jobs JobRadar collected in the last 7 days. This is not a survey of the whole market.</p>
+          <div className="grid g3">
+            <Link className="card insight" href="/job-market-insights#categories"><div className="statlabel">Trending job categories</div>
+              <ol>{cats.slice(0, 3).map((c) => <li key={c.slug}>{c.name} <span className="muted">· {c.n}</span></li>)}</ol>{!cats.length && <span className="muted small">No data yet</span>}</Link>
+            <Link className="card insight" href="/job-market-insights#cities"><div className="statlabel">Most active hiring cities</div>
+              <ol>{ins.cities.slice(0, 3).map((c) => <li key={c.slug}>{c.name} <span className="muted">· {c.n}</span></li>)}</ol>{!ins.cities.length && <span className="muted small">No data yet</span>}</Link>
+            <Link className="card insight" href="/job-market-insights#skills"><div className="statlabel">Popular skills</div>
+              <div className="row" style={{ gap: 6, marginTop: 8 }}>{ins.skills.slice(0, 6).map((s) => <span key={s.name} className="chip">{s.name}</span>)}</div>{!ins.skills.length && <span className="muted small">No data yet</span>}</Link>
+            <Link className="card insight" href="/jobs"><div className="statlabel">Recently discovered jobs</div>
+              <div className="stat">{ins.recent.day.toLocaleString("en-IN")}</div><div className="small muted">in the last 24 hours · {ins.recent.hour} in the last hour</div></Link>
+            <Link className="card insight" href="/job-market-insights#remote"><div className="statlabel">Remote job opportunities</div>
+              <div className="stat">{m.remote.toLocaleString("en-IN")}</div><div className="small muted">remote · {m.hybrid} hybrid · {m.onsite} on-site</div></Link>
+            <Link className="card insight" href="/job-market-insights#salary"><div className="statlabel">Salary trends</div>
+              {ins.salary.disclosed >= 3 ? <><div className="stat">{lpa(ins.salary.median)}</div><div className="small muted">median of {ins.salary.disclosed} disclosed salaries</div></>
+                : <div className="small muted" style={{ marginTop: 8 }}>Not enough disclosed salaries yet ({ins.salary.disclosed}).</div>}</Link>
+          </div>
         </section>
         <section className="section">
           <div className="row" style={{ justifyContent: "space-between" }}><h2>Just discovered</h2><Link href="/jobs">See all jobs →</Link></div>

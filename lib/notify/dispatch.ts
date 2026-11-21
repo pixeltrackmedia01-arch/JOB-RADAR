@@ -139,11 +139,22 @@ async function deliver(
   await query(sql`update jobradar.alert_subscriptions set last_dispatch_at = ${now} where id = ${sub.id}::uuid returning id`);
 }
 
+/** Most recent weekly digest slot at or before `now`: Monday at the digest hour (IST). */
+export function weeklySlot(now: Date, hourIst: number): Date {
+  const day = startOfDayIST(now);
+  const istWeekday = new Date(day.getTime() + 5.5 * 3600_000).getUTCDay(); // 0 = Sunday
+  const monday = new Date(day.getTime() - ((istWeekday + 6) % 7) * 86400_000);
+  let slot = new Date(monday.getTime() + hourIst * 3600_000);
+  if (slot > now) slot = new Date(slot.getTime() - 7 * 86400_000);
+  return slot;
+}
+
 export async function dispatchNotifications(now = new Date()): Promise<DeliveryStats> {
   const stats: DeliveryStats = { subscriptions: 0, emails_sent: 0, emails_failed: 0, push_sent: 0, push_failed: 0, skipped: 0 };
   const notif = await getSetting("notifications");
   const dayStart = startOfDayIST(now);
   const digestAt = new Date(dayStart.getTime() + notif.daily_digest_hour_ist * 3600_000);
+  const weeklyAt = weeklySlot(now, notif.daily_digest_hour_ist);
   // Claim due events atomically (dispatched_at set) so concurrent dispatchers never double-send.
   const claimed = await query(sql`update jobradar.notification_events e set dispatched_at = ${now}
      from jobradar.alert_subscriptions s, jobradar.alert_preferences p
@@ -155,7 +166,8 @@ export async function dispatchNotifications(now = new Date()): Promise<DeliveryS
          where e2.dispatched_at is null and s2.status = 'active'
            and (p2.notification_frequency = 'instant'
              or (p2.notification_frequency = 'every_30_minutes' and (s2.last_dispatch_at is null or s2.last_dispatch_at <= ${now}::timestamptz - interval '29 minutes'))
-             or (p2.notification_frequency = 'daily' and ${now}::timestamptz >= ${digestAt}::timestamptz and (s2.last_dispatch_at is null or s2.last_dispatch_at < ${digestAt}::timestamptz)))
+             or (p2.notification_frequency = 'daily' and ${now}::timestamptz >= ${digestAt}::timestamptz and (s2.last_dispatch_at is null or s2.last_dispatch_at < ${digestAt}::timestamptz))
+             or (p2.notification_frequency = 'weekly' and coalesce(s2.last_dispatch_at, s2.created_at) < ${weeklyAt}::timestamptz))
          order by e2.created_at limit 2000
          for update of e2 skip locked)
     returning e.id, e.job_id, e.event_type, e.subscription_id`);

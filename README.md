@@ -18,6 +18,14 @@ Proactive job discovery: JobRadar checks every permitted job source on its own s
 | Account-free subscriptions: double opt-in, HMAC management links (only a salt is stored), pause/resume/unsubscribe, RFC 8058 one-click | `lib/alerts.ts` |
 | Admin: Automation & Monitoring, Notification Management | `app/admin/*` |
 
+## Job-seeker features
+| Feature | How it works | Where |
+| --- | --- | --- |
+| **One-click saved searches** | "Save Search & Get Alerts" on every results page reuses the current filters. Searches are stored in the browser (`localStorage`, key `jobradar:v1`); the email alert goes through the real double opt-in backend (instant / daily / weekly). After confirmation in the same browser, the saved search is linked to its alert so pause/resume/frequency/delete work from `/saved-searches`. | `components/SaveSearchButton.tsx`, `components/SavedSearches.tsx`, `lib/client/store.ts` |
+| **Freshness score** | 0–100 from posting age (60), last seen in the source feed (25), application link (10), source-supplied date (5). Posting date, discovery date, last-seen date and status are kept separate. No posting date → "Freshness unavailable". Not seen for 48 h → "Possibly expired" (capped at 30). Links are not checked live yet (`link_checked_at` / `link_ok` are reserved for a backend checker). | `lib/freshness.ts`, `components/FreshnessBadge.tsx` |
+| **Job market insights** | Aggregates over collected jobs from the last 7 days: categories, cities, skills, work modes, disclosed-salary quartiles (filter by city, category, experience). Growth % only after 14 days of collection history. No estimated salaries. | `lib/insights.ts`, `/job-market-insights`, homepage "Explore the Job Market" |
+| **Smart recommendations** | The browser derives a profile from searches, saved searches, saved jobs (2×) and viewed jobs; `/api/recommendations` scores the shared candidate pool (title similarity + synonyms 30, skills 20, location 15, experience 10, type/mode 10, search history 10, freshness 5) and returns labelled sections. The profile is not stored server-side. Users can clear their history. | `lib/recommend.ts`, `/for-you`, "Similar jobs" on job pages |
+
 ## Sources
 | Source | Status | Why |
 | --- | --- | --- |

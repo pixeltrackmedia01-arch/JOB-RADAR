@@ -23,7 +23,7 @@ before(async () => {
   await admin.end();
   const c = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
-  for (const f of ["001_schema.sql", "002_functions.sql", "003_seed.sql", "005_india_only.sql", "006_india_cities.sql"]) await c.query(readFileSync(`db/migrations/${f}`, "utf8"));
+  for (const f of ["001_schema.sql", "002_functions.sql", "003_seed.sql", "005_india_only.sql", "006_india_cities.sql", "007_weekly_digest.sql"]) await c.query(readFileSync(`db/migrations/${f}`, "utf8"));
   await c.query("insert into jobradar.app_secrets (id, secret_hash) values (1, $1)", [createHash("sha256").update(process.env.DB_GATEWAY_SECRET!).digest()]);
   await c.end();
   const email = await import("../lib/notify/email.ts");
@@ -132,6 +132,30 @@ test("full alert workflow", async () => {
   assert.ok(runs.n >= 2);
   const ev = await q(sql.sql`select event_type from jobradar.activity_events`);
   for (const t of ["collection_started", "jobs_discovered", "jobs_inserted", "subscriptions_matched", "delivery_results"]) assert.ok(ev.some((e: any) => e.event_type === t), t);
+});
+
+test("weekly digest alert from a saved search", async () => {
+  const { alerts, db, sql } = mod;
+  const { dispatchNotifications, weeklySlot } = await import("../lib/notify/dispatch.ts");
+  const before = sent.length;
+  const r = await alerts.subscribe({ email: "weekly@example.com", prefs: { keywords: ["engineer"], notification_frequency: "weekly", notification_channels: ["email"] } }, "iphash2");
+  assert.equal(r.status, "verification_required");
+  assert.match(r.subscriptionId, /^[0-9a-f-]{36}$/, "subscription id returned so the saved search can be linked");
+  const token = /token=([A-Za-z0-9_-]+)/.exec(sent[sent.length - 1].text)![1];
+  assert.ok((await alerts.verifyEmail(token)).ok);
+  const [p] = await db.query(sql.sql`select notification_frequency from jobradar.alert_preferences where subscription_id = ${r.subscriptionId}::uuid`);
+  assert.equal(p.notification_frequency, "weekly");
+  const [job] = await db.query(sql.sql`select id from jobradar.jobs limit 1`);
+  await db.query(sql.sql`insert into jobradar.notification_events (subscription_id, job_id, event_type) values (${r.subscriptionId}::uuid, ${job.id}::uuid, 'new_job_match') returning id`);
+  // Subscribed after the latest weekly slot: nothing is sent until the next slot.
+  await dispatchNotifications(new Date());
+  assert.equal(sent.length, before + 1, "only the confirmation email so far");
+  const next = new Date(weeklySlot(new Date(), 8).getTime() + 7 * 86400_000 + 60_000);
+  await dispatchNotifications(next);
+  assert.equal(sent.length, before + 2, "weekly digest sent at the next slot");
+  await db.query(sql.sql`insert into jobradar.notification_events (subscription_id, job_id, event_type) values (${r.subscriptionId}::uuid, ${job.id}::uuid, 'job_update_match') returning id`);
+  await dispatchNotifications(new Date(next.getTime() + 3600_000));
+  assert.equal(sent.length, before + 2, "no second digest within the same week");
 });
 
 test("failed source is recorded, retried, and does not block others", async () => {

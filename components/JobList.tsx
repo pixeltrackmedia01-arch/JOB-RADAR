@@ -1,7 +1,8 @@
 import Link from "next/link";
-import JobCard, { AlertCta } from "./JobCard";
-import { POSTED_OPTIONS, searchJobs, type JobFilters } from "@/lib/jobs";
-import { alertHref } from "./data";
+import JobCard from "./JobCard";
+import SaveSearchButton from "./SaveSearchButton";
+import { TrackSearch } from "./Track";
+import { POSTED_OPTIONS, prefsFromFilters, searchJobs, type JobFilters } from "@/lib/jobs";
 import CityOptions from "./CityOptions";
 import { listCategories, listLocations } from "@/lib/taxonomy";
 
@@ -9,7 +10,9 @@ export default async function JobList({ filters, basePath, fixed = {} }: { filte
   const [res, categories, locations] = await Promise.all([searchJobs(filters), listCategories(), listLocations()]);
   const sp: Record<string, string | undefined> = { q: filters.q, category: filters.category, city: filters.city, mode: filters.mode, type: filters.type, exp: filters.exp, salary: filters.salary, posted: filters.posted };
   const hasFilters = Object.values(sp).some(Boolean);
-  const { posted: _p, ...alertSp } = sp;
+  const saveFilters = { ...sp, ...fixed };
+  const prefs = await prefsFromFilters({ ...filters, ...fixed });
+  const labels = { category: categories.find((c) => c.slug === saveFilters.category)?.name, city: locations.find((l) => l.slug === saveFilters.city)?.name };
   const pageHref = (p: number) => { const q = new URLSearchParams(); for (const [k, v] of Object.entries(sp)) if (v && !fixed[k]) q.set(k, v); q.set("page", String(p)); return `${basePath}?${q}`; };
   return (
     <div className="layout">
@@ -27,7 +30,11 @@ export default async function JobList({ filters, basePath, fixed = {} }: { filte
         </form>
       </aside>
       <section className="grid" style={{ alignContent: "start" }}>
-        <AlertCta href={alertHref({ ...alertSp, ...fixed })} title={hasFilters || Object.keys(fixed).length ? "Get alerts for this search" : "Get notified about new jobs"} />
+        {(hasFilters || Object.keys(fixed).length > 0) && <TrackSearch filters={saveFilters} />}
+        <div className="row resultbar">
+          <span className="small muted">Save these filters and get an email when a new matching job is discovered.</span>
+          <SaveSearchButton filters={saveFilters} labels={labels} prefs={prefs} />
+        </div>
         <div className="row small">
           <span className="muted">{res.total.toLocaleString("en-IN")} job{res.total === 1 ? "" : "s"} in India posted in the last {filters.posted ? filters.posted.replace("d", "") === "1" ? "24 hours" : `${filters.posted.replace("d", "")} days` : "7 days"}{filters.q ? ` for “${filters.q}”` : ""} · newest first</span>
           {POSTED_OPTIONS.map(([v, l]) => {

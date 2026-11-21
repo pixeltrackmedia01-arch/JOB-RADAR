@@ -40,7 +40,7 @@ export class AlertError extends Error {
 const EMAIL_RE = /^[^\s@<>()",;:]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}$/;
 const EMPLOYMENT = ["full_time", "part_time", "contract", "internship", "temporary", "freelance"];
 const MODES = ["remote", "hybrid", "onsite"];
-const FREQ = ["instant", "every_30_minutes", "daily"];
+const FREQ = ["instant", "every_30_minutes", "daily", "weekly"];
 
 function num(v: unknown, max: number): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -148,10 +148,10 @@ export async function subscribe(input: { email?: string; prefs: PrefsInput; push
   if (input.push && wantsPush) await attachPush(sub!.id, input.push);
   if (wantsEmail) {
     const v = await sendVerification(sub!.id, email, prefs);
-    return { status: "verification_required" as const, emailSent: v.sent, emailError: v.sent ? undefined : "We could not send the confirmation email right now. Please try again later." };
+    return { status: "verification_required" as const, subscriptionId: sub!.id as string, emailSent: v.sent, emailError: v.sent ? undefined : "We could not send the confirmation email right now. Please try again later." };
   }
   // Push-only alert: the browser permission is the opt-in; return the management link directly.
-  return { status: "active" as const, manageToken: makeManageToken(sub!.id, sub!.token_salt) };
+  return { status: "active" as const, subscriptionId: sub!.id as string, manageToken: makeManageToken(sub!.id, sub!.token_salt) };
 }
 
 export async function verifyEmail(token: string): Promise<{ ok: boolean; manageToken?: string; reason?: string }> {

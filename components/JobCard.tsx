@@ -2,15 +2,23 @@ import Link from "next/link";
 import type { JobCard as J } from "@/lib/jobs";
 import { fmtIST, timeAgo } from "@/lib/time";
 import { experienceLabel } from "@/lib/notify/templates";
+import { freshness } from "@/lib/freshness";
+import { toSnap } from "@/lib/recommend";
+import FreshnessBadge from "./FreshnessBadge";
+import SaveJobButton from "./SaveJobButton";
 
 const TYPE: Record<string, string> = { full_time: "Full-time", part_time: "Part-time", contract: "Contract", internship: "Internship", temporary: "Temporary", freelance: "Freelance" };
 const MODE: Record<string, string> = { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" };
 
-export default function JobCard({ job }: { job: J }) {
+export default function JobCard({ job, reasons }: { job: J; reasons?: string[] }) {
   const exp = experienceLabel(job.experience_min, job.experience_max);
+  const f = freshness(job);
   return (
-    <Link href={`/jobs/${job.slug}`} className="card job">
-      <h3>{job.title}</h3>
+    <article className="card job">
+      <div className="jobhead">
+        <h3><Link href={`/jobs/${job.slug}`} className="stretch">{job.title}</Link></h3>
+        <SaveJobButton job={toSnap(job)} />
+      </div>
       <div className="company">{job.company}</div>
       <div className="meta">
         {job.location_text && <span>📍 {job.location_text}</span>}
@@ -21,11 +29,18 @@ export default function JobCard({ job }: { job: J }) {
       </div>
       {job.short_description && <p className="small muted" style={{ margin: "8px 0 0" }}>{job.short_description.slice(0, 200)}</p>}
       <div className="meta">
-        <span title={fmtIST(job.posted_at)}>🕒 Posted {timeAgo(job.posted_at)}{!job.original_published_at && " (first seen)"}</span>
+        {job.original_published_at
+          ? <span title={fmtIST(job.original_published_at)}>🕒 Posted {timeAgo(job.original_published_at)}</span>
+          : <span>🕒 Posting date not provided</span>}
+        <span title={fmtIST(job.first_discovered_at)}>📡 Discovered {timeAgo(job.first_discovered_at)}</span>
+      </div>
+      <div className="meta">
+        <FreshnessBadge f={f} times={{ posted: job.original_published_at, discovered: job.first_discovered_at, seen: job.last_verified_at ?? null, status: job.status }} />
         <span className="chip source">Source: {sourceLabel(job)}</span>
         {job.category_name && <span className="chip">{job.category_name}</span>}
       </div>
-    </Link>
+      {reasons && reasons.length > 0 && <div className="reasons">{reasons.slice(0, 3).map((r) => <span key={r} className="chip reason">{r}</span>)}</div>}
+    </article>
   );
 }
 

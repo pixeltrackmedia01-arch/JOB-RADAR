@@ -162,6 +162,7 @@ export default function AlertForm(props: {
             <option value="instant">Instantly, as soon as a job is found</option>
             <option value="every_30_minutes">Every 30 minutes (bundled)</option>
             <option value="daily">Daily digest (8 AM IST)</option>
+            <option value="weekly">Weekly digest (Mondays, 8 AM IST)</option>
           </select>
         </div>
         <div>

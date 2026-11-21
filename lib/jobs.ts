@@ -24,9 +24,19 @@ export type JobCard = {
   work_mode: string | null; first_discovered_at: string; original_published_at: string | null;
   category_name: string | null; category_slug: string | null; city_name: string | null; source_names: string[];
   source_url: string | null; posted_at: string;
+  last_verified_at: string; status: string; skills: string[]; apply_url: string | null; city_slug: string | null;
+  salary_min: number | null; salary_max: number | null; salary_currency: string | null; salary_period: string | null;
 };
 
 const PAGE = 20;
+
+// One column list for every job card in the app (search, recommendations, insights links).
+const CARD_COLS = sql`j.employment_type, j.work_mode, j.first_discovered_at, j.original_published_at, c.name as category_name, c.slug as category_slug, l.name as city_name,
+        coalesce((select array_agg(distinct s.name) from jobradar.job_sources js join jobradar.sources s on s.id = js.source_id where js.job_id = j.id), '{}') as source_names,
+        (select js.source_url from jobradar.job_sources js where js.job_id = j.id order by js.first_seen_at limit 1) as source_url,
+        coalesce(j.original_published_at, j.first_discovered_at) as posted_at,
+        j.last_verified_at, j.status, j.skills, j.apply_url, l.slug as city_slug,
+        j.salary_min, j.salary_max, j.salary_currency, j.salary_period`;
 
 export function filtersFromSearchParams(sp: Record<string, string | string[] | undefined>): JobFilters {
   const g = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string).slice(0, 120) : undefined);
@@ -65,10 +75,7 @@ async function runSearch(f: JobFilters, mode: "all" | "any"): Promise<{ jobs: Jo
     : sql`${posted} desc`;
   const [rows, count] = await Promise.all([
     query<JobCard>(sql`select j.id, j.slug, j.title, j.company, j.location_text, j.short_description, j.salary_text, j.experience_min, j.experience_max,
-        j.employment_type, j.work_mode, j.first_discovered_at, j.original_published_at, c.name as category_name, c.slug as category_slug, l.name as city_name,
-        coalesce((select array_agg(distinct s.name) from jobradar.job_sources js join jobradar.sources s on s.id = js.source_id where js.job_id = j.id), '{}') as source_names,
-        (select js.source_url from jobradar.job_sources js where js.job_id = j.id order by js.first_seen_at limit 1) as source_url,
-        coalesce(j.original_published_at, j.first_discovered_at) as posted_at
+        ${CARD_COLS}
       ${from} order by ${order} limit ${PAGE} offset ${(page - 1) * PAGE}`),
     one(sql`select count(*)::int as n ${from}`),
   ]);
@@ -122,6 +129,21 @@ export async function prefsFromFilters(f: JobFilters) {
     experience_max: f.exp ? Number(f.exp) : null,
     preferred_sources: f.source ? [f.source] : [],
   };
+}
+
+/** Recent active jobs in card shape: the shared candidate pool for recommendations. */
+export async function candidateJobs(limit = 400): Promise<JobCard[]> {
+  return query<JobCard>(sql`select j.id, j.slug, j.title, j.company, j.location_text, j.short_description, j.salary_text, j.experience_min,
+        j.experience_max, ${CARD_COLS}
+      from jobradar.jobs j left join jobradar.categories c on c.id = j.category_id left join jobradar.locations l on l.id = j.location_id
+     where j.status = 'active' and coalesce(j.original_published_at, j.first_discovered_at) >= now() - interval '7 days'
+     order by j.first_discovered_at desc limit ${limit}`);
+}
+
+/** Search synonyms (term -> related terms), used to find related job titles. */
+export async function keywordSynonyms(): Promise<Record<string, string[]>> {
+  const rows = await query(sql`select term, synonyms from jobradar.keyword_synonyms`);
+  return Object.fromEntries(rows.map((r: any) => [r.term, r.synonyms]));
 }
 
 void empty;

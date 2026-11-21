@@ -98,7 +98,7 @@ export function renderAlertEmail(opts: {
   const { jobs, appUrl, manageUrl, unsubscribeUrl, tpl } = opts;
   const subject = alertSubject(jobs, tpl);
   const utm = "utm_source=jobradar&utm_medium=email&utm_campaign=job_alert";
-  const freqLabel = opts.frequency === "daily" ? "daily digest" : opts.frequency === "every_30_minutes" ? "30-minute digest" : "instant alert";
+  const freqLabel = opts.frequency === "daily" ? "daily digest" : opts.frequency === "weekly" ? "weekly digest" : opts.frequency === "every_30_minutes" ? "30-minute digest" : "instant alert";
   const inner = `<tr><td class="px" style="padding:24px 28px 8px">
 <h1 style="margin:0;font-size:21px;line-height:1.3;color:${INK}">${esc(subject)}</h1>
 <p style="margin:8px 0 0;font-size:14px;color:${MUTED};line-height:1.55">${esc(tpl.intro)}</p></td></tr>

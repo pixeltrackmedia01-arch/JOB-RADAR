@@ -2,7 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertCta } from "@/components/JobCard";
 import { alertHref } from "@/components/data";
-import { getJob } from "@/lib/jobs";
+import { candidateJobs, getJob, keywordSynonyms } from "@/lib/jobs";
+import JobCard from "@/components/JobCard";
+import FreshnessBadge from "@/components/FreshnessBadge";
+import SaveJobButton from "@/components/SaveJobButton";
+import { TrackView } from "@/components/Track";
+import { freshness } from "@/lib/freshness";
+import { similarJobs, toSnap } from "@/lib/recommend";
 import { fmtIST } from "@/lib/time";
 import { experienceLabel } from "@/lib/notify/templates";
 
@@ -15,8 +21,13 @@ export default async function JobPage({ params }: { params: Promise<{ slug: stri
   const { job, sources } = data;
   const exp = experienceLabel(job.experience_min, job.experience_max);
   const primary = sources[0];
+  const snap = toSnap(job as any);
+  const [pool, synonyms] = await Promise.all([candidateJobs(), keywordSynonyms()]);
+  const similar = similarJobs(snap, pool, synonyms, 4);
+  const f = freshness({ ...(job as any), source_url: primary?.source_url });
   return (
     <div className="wrap" style={{ margin: "26px auto" }}>
+      <TrackView job={snap} />
       <div className="small"><Link href="/jobs">← All jobs</Link>{job.category_slug && <> · <Link href={`/category/${job.category_slug}`}>{job.category_name}</Link></>}{job.city_slug && <> · <Link href={`/city/${job.city_slug}`}>{job.city_name}</Link></>}</div>
       <div className="layout" style={{ gridTemplateColumns: "1fr 300px" }}>
         <article className="card">
@@ -32,7 +43,13 @@ export default async function JobPage({ params }: { params: Promise<{ slug: stri
             <span>🕒 Posted {job.original_published_at ? fmtIST(job.original_published_at) : `— (first seen ${fmtIST(job.first_discovered_at)})`}</span>
             {primary && <span className="chip source">Source: {primary.name} · <a href={primary.source_url} target="_blank" rel="noopener">{new URL(primary.source_url).hostname.replace(/^www\./, "")}</a></span>}
           </div>
-          {primary && <div className="row" style={{ margin: "18px 0" }}><a className="btn" href={job.apply_url || primary.source_url} target="_blank" rel="noopener">Apply on {primary.name} ↗</a></div>}
+          <div className="meta" style={{ fontSize: 14 }}>
+            <FreshnessBadge f={f} times={{ posted: job.original_published_at, discovered: job.first_discovered_at, seen: job.last_verified_at, status: job.status }} />
+          </div>
+          <div className="row" style={{ margin: "18px 0" }}>
+            {primary && <a className="btn" href={job.apply_url || primary.source_url} target="_blank" rel="noopener">Apply on {primary.name} ↗</a>}
+            <SaveJobButton job={snap} big />
+          </div>
           <div className="desc">{job.description || job.short_description}</div>
         </article>
         <aside className="grid" style={{ alignContent: "start" }}>
@@ -41,7 +58,9 @@ export default async function JobPage({ params }: { params: Promise<{ slug: stri
             <div><strong>First discovered:</strong> {fmtIST(job.first_discovered_at)}</div>
             {job.original_published_at && <div><strong>Originally published:</strong> {fmtIST(job.original_published_at)}</div>}
             <div><strong>Last updated:</strong> {fmtIST(job.last_updated_at)}</div>
-            <div><strong>Last verified:</strong> {fmtIST(job.last_verified_at)}</div>
+            <div><strong>Last seen in source feed:</strong> {fmtIST(job.last_verified_at)}</div>
+            <div><strong>Last known status:</strong> {job.status === "active" ? "Available" : job.status}</div>
+            <div className="muted" style={{ marginTop: 6 }}>JobRadar re-reads each source on its schedule. Application links are not checked live.</div>
           </div>
           <div className="card small">
             <strong>Original source{sources.length > 1 ? "s" : ""}</strong>
@@ -51,6 +70,12 @@ export default async function JobPage({ params }: { params: Promise<{ slug: stri
           </div>
         </aside>
       </div>
+      {similar.length > 0 && (
+        <section className="section">
+          <h2>Similar jobs</h2>
+          <div className="grid g2">{similar.map((s) => <JobCard key={s.job.id} job={s.job} reasons={s.reasons} />)}</div>
+        </section>
+      )}
     </div>
   );
 }

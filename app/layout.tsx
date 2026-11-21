@@ -18,8 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="logo"><span className="dot" />JobRadar</Link>
             <nav className="main">
               <Link href="/jobs">Jobs</Link>
-              <Link href="/city/surat">Surat</Link>
-              <Link href="/jobs?city=remote">Remote</Link>
+              <Link href="/for-you">For you</Link>
+              <Link href="/saved-searches">Saved</Link>
+              <Link href="/job-market-insights">Market insights</Link>
               <Link href="/job-alerts">Job alerts</Link>
             </nav>
           </div>

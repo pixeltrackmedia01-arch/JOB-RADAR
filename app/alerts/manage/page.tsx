@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AlertForm from "@/components/AlertForm";
 import ManageActions from "@/components/ManageActions";
+import LinkSavedSearch from "@/components/LinkSavedSearch";
 import { formOptions } from "@/components/data";
 import { getManagedAlert } from "@/lib/alerts";
 import { fmtIST } from "@/lib/time";
@@ -17,6 +18,7 @@ export default async function Manage({ searchParams }: { searchParams: Promise<{
   return (
     <div className="wrap" style={{ maxWidth: 900, margin: "30px auto" }}>
       {verified && <div className="notice" style={{ marginBottom: 14 }}>✅ Email confirmed — your alert is active. Keep this page private: anyone with this link can manage the alert.</div>}
+      <LinkSavedSearch subscriptionId={s.id} token={token} status={s.status} />
       <h1 style={{ marginBottom: 4 }}>Manage your job alert</h1>
       <div className="row small muted">
         <span>{s.email ?? "Browser push alert"}</span>·<span className={`badge ${s.status}`}>{s.status}</span>·<span>created {fmtIST(s.created_at)}</span>
