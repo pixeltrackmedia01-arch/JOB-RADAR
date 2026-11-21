@@ -23,7 +23,7 @@ before(async () => {
   await admin.end();
   const c = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
-  for (const f of ["001_schema.sql", "002_functions.sql", "003_seed.sql", "005_india_only.sql", "006_india_cities.sql", "007_weekly_digest.sql"]) await c.query(readFileSync(`db/migrations/${f}`, "utf8"));
+  for (const f of ["001_schema.sql", "002_functions.sql", "003_seed.sql", "005_india_only.sql", "006_india_cities.sql", "007_weekly_digest.sql", "008_multi_gateway_secrets.sql"]) await c.query(readFileSync(`db/migrations/${f}`, "utf8"));
   await c.query("insert into jobradar.app_secrets (id, secret_hash) values (1, $1)", [createHash("sha256").update(process.env.DB_GATEWAY_SECRET!).digest()]);
   await c.end();
   const email = await import("../lib/notify/email.ts");
